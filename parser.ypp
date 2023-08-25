@@ -1,0 +1,1124 @@
+%{
+  #include <iostream>
+  #include <vector>
+  #include <string>
+  #include <fstream>
+  #include <vector>
+  #include <queue>
+  #include <map>
+  #include <bits/stdc++.h>
+
+  #define HashSize 500
+
+  using namespace std;
+
+  long int line_no=1;
+  extern int yylineno;
+  extern void yyerror(char const * message);
+  extern int yyparse(void);
+  extern int yylex(void);
+    extern FILE *yyin;
+  ofstream myFile;
+  struct Node *head;
+  struct Node *temp;
+  int cnt=1;
+
+  fstream fout;
+
+  map<string , struct Node *> mymap; 
+  unordered_map<string, struct Symbol *> map2;
+
+  
+
+struct Node {
+    string token;
+    vector<struct Node*> children;
+  };
+  extern struct Node* NewNode(string token);
+    extern struct Node* NewNodeS(string token);
+
+
+struct Symbol {
+	char *lexeme;
+	char *type;
+	string attribute; //class, function(method), variable
+	int block;
+	string scope;
+	struct Symbol* next;
+};
+
+extern struct Symbol* NewSymbol(char *lexeme, char *type, string attribute, int block, string scope);
+
+struct SymbolTable { // global symbol table struct 
+    Symbol *table[HashSize];
+    struct SymbolTable *parent;
+};
+
+int Hash(char *str) { //hash function
+    unsigned int hash = 0;
+    while (*str) hash = (hash << 1) + *str++;
+    return hash % HashSize;
+}
+
+Symbol *putSymbol(SymbolTable *t, char *name, char *type, string attribute, int block, string scope) { //insert an entry
+    int i = Hash(name);
+    for (Symbol *s = t->table[i]; s; s = s->next) {
+        if (strcmp(s->lexeme, name) == 0) {
+			yyerror("redeclaration");
+			return NULL;
+		}// throw an error
+    }
+    struct Symbol *s= new Symbol();
+    s->lexeme = name;
+    s->type = type;
+	s->attribute = attribute;
+	s->block = block;
+	s->scope = scope;
+    s->next = t->table[i];
+    t->table[i] = s;
+    return s;
+}
+
+Symbol *getSymbol(SymbolTable *t, char *name) { //fetching element
+    int i = Hash(name);
+    // Check the current scope
+    for (Symbol *s = t->table[i]; s; s = s->next) {
+        if (strcmp(s->lexeme, name) == 0) return s;
+    }
+    // Check for existence of a parent scope
+    if (t->parent == NULL)
+        return NULL;
+    // Check the parent scopes
+    return getSymbol(t->parent, name);
+}
+
+SymbolTable *initSymbolTable() { //empty symbol table for when a new scope is opened
+    struct SymbolTable *t = new SymbolTable();
+    for (int i = 0; i < HashSize; i++) {
+        t->table[i] = NULL;
+    }
+    t->parent = NULL;
+    return t;
+}
+
+SymbolTable *scopeSymbolTable(SymbolTable *s) { //setting new symbol table's parent to current symbol table
+    SymbolTable *t = initSymbolTable();
+    t->parent = s;
+    return t;
+}
+
+
+// struct SymbolTable *GlobalTable = new SymbolTable();
+struct SymbolTable *GlobalTable = initSymbolTable();
+struct SymbolTable *scopeTable = scopeSymbolTable(GlobalTable);
+
+
+
+%}
+
+
+%union
+{
+    struct Node *nj;
+    char *lexeme;
+};
+
+
+
+
+
+%type<nj>  Goal Literal Type LabeledStatement  Dims CastExpression FormalParameterList InterfaceType PrimitiveType NumericType IntegralType FloatingPointType ReferenceType ClassOrInterfaceType ClassType InterfaceBody ArrayType Name SimpleName QualifiedName CompilationUnit ImportDeclaration TypeDeclarations TypeDeclaration PackageDeclaration ImportDeclarations SingleTypeImportDeclaration TypeImportOnDemandDeclaration Modifiers Modifier ClassDeclaration Super Interfaces InterfaceTypeList ClassBody ClassBodyDeclarations ClassBodyDeclaration ClassMemberDeclaration FieldDeclaration VariableDeclarators VariableDeclarator VariableDeclaratorId VariableInitializer MethodDeclaration 
+
+%type<nj>  MethodHeader LabeledStatementNoShortIf WhileStatementNoShortIf EmptyStatement  MethodDeclarator FormalParameter Throws ClassTypeList MethodBody StaticInitializer ConstructorDeclaration ConstructorDeclarator ConstructorBody ExplicitConstructorInvocation  InterfaceDeclaration ExtendsInterfaces InterfaceMemberDeclarations InterfaceMemberDeclaration ConstantDeclaration AbstractMethodDeclaration ArrayInitializer VariableInitializers Block BlockStatements BlockStatement LocalVariableDeclarationStatement LocalVariableDeclaration Statement StatementNoShortIf StatementWithoutTrailingSubstatement ExpressionStatement StatementExpression IfThenElseStatement IfThenStatement Expression
+
+%type<nj>  WhileStatement IfThenElseStatementNoShortIf DoStatement ForStatement ForStatementNoShortIf ForInit ForUpdate StatementExpressionList BreakStatement ContinueStatement ReturnStatement ThrowStatement SynchronizedStatement TryStatement Catches CatchClause Finally Primary PrimaryNoNewArray ClassInstanceCreationExpression ArgumentList ArrayCreationExpression DimExprs DimExpr FieldAccess MethodInvocation ArrayAccess PostfixExpression PostIncrementExpression PostDecrementExpression UnaryExpression PreIncrementExpression PreDecrementExpression UnaryExpressionNotPlusMinus MultiplicativeExpression AdditiveExpression ShiftExpression RelationalExpression EqualityExpression AndExpression ExclusiveOrExpression InclusiveOrExpression ConditionalAndExpression ConditionalOrExpression ConditionalExpression AssignmentExpression Assignment LeftHandSide AssignmentOperator
+
+%token<lexeme> Dot Left_sq Right_sq Bit_and Lessthan Greaterthan Comma Qmark Eq Lb Rb Colon Or Stareq slasheq modeq pluseq minuseq lseq rseq triplegeq andeq poweq oreq Ortwice andand deq neq ls rs leq geq tripleshft Power tilde Not
+
+%token<lexeme> Abstract Continue For New If package synchronized boolean Do Private This Break Double implements Protected Throw  Else import Public throws instanceof Return transient Catch extends Int  Try Char final interface Static Void Class finally Long Volatile Float native super While
+%token<lexeme> Null
+%token<lexeme> IDENTIFIER
+%token<lexeme> Left_curly Right_curly Semicolon 
+%token<lexeme>  IntegerLiteral 
+%token<lexeme> FloatingPointLiteral 
+%token<lexeme> BooleanLiteral CharacterLiteral StringLiteral addn subn multi Div plusplus minusminus mod
+
+%start Goal
+
+%%
+
+Goal: CompilationUnit {$$ = $1; head = $$; struct SymbolTable *GlobalTable; };
+
+Literal:
+
+	IntegerLiteral {mymap[$1] = NewNode($1); $$= mymap[$1]; }
+
+	|FloatingPointLiteral {mymap[$1] = NewNode($1); $$= mymap[$1]; }
+
+	|BooleanLiteral {mymap[$1] = NewNode($1); $$= mymap[$1];}
+
+	|CharacterLiteral {mymap[$1] = NewNode($1); $$= mymap[$1];}
+
+	|StringLiteral { mymap[$1] = NewNodeS($1); $$= mymap[$1];}
+
+	|Null {mymap[$1] = NewNode($1); $$= mymap[$1];};
+
+
+Type:
+
+	PrimitiveType {$$ = $1;}
+
+	|ReferenceType {$$ = $1;};
+
+PrimitiveType:
+
+	NumericType {$$ = $1;}
+
+	|boolean {mymap[$1] = NewNode($1); $$= mymap[$1];};
+
+NumericType:
+
+	IntegralType {$$ = $1;}
+
+	|FloatingPointType {$$ = $1;};
+
+IntegralType:
+
+	Int {mymap[$1] = NewNode($1); $$= mymap[$1];}
+	| Long {mymap[$1] = NewNode($1); $$= mymap[$1];} 
+	| Char {mymap[$1] = NewNode($1); $$= mymap[$1];} ;
+
+FloatingPointType:
+
+	Float {mymap[$1] = NewNode($1); $$= mymap[$1];}
+	| Double {mymap[$1] = NewNode($1); $$= mymap[$1];};
+
+ReferenceType:
+
+	ClassOrInterfaceType {$$ = $1;}
+
+	|ArrayType {$$ = $1;};
+
+ClassOrInterfaceType:
+
+	Name {$$ = $1;};
+
+ClassType:
+
+	ClassOrInterfaceType {$$ = $1;};
+
+InterfaceType:
+
+	ClassOrInterfaceType {$$ = $1;};
+
+ArrayType:
+
+	PrimitiveType Left_sq Right_sq {$$ = NewNode("ArrayType"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));}
+
+	|Name Left_sq Right_sq {$$ = NewNode("ArrayType"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));}
+
+	|ArrayType Left_sq Right_sq  {$$ = NewNode("ArrayType"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));};
+
+
+
+
+Name:
+
+	SimpleName {$$ = $1;}
+
+	|QualifiedName  {$$ = $1;};
+
+SimpleName:
+
+	IDENTIFIER {mymap[$1] = NewNode($1); $$= mymap[$1];};
+
+QualifiedName:
+
+	Name Dot IDENTIFIER {$$ = NewNode("QualifiedName"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));};
+
+
+
+
+CompilationUnit:
+	 
+	PackageDeclaration                         {$$ = $1;}
+    |ImportDeclarations                         {$$ = $1;}
+    |TypeDeclarations                           {$$ = $1;}
+    |PackageDeclaration ImportDeclarations      {$$ = NewNode("CompilationUnit"); $$->children.push_back($1); $$->children.push_back($2);}
+    |ImportDeclarations TypeDeclarations        {$$ = NewNode("CompilationUnit"); $$->children.push_back($1); $$->children.push_back($2);}
+    |PackageDeclaration TypeDeclarations        {$$ = NewNode("CompilationUnit"); $$->children.push_back($1); $$->children.push_back($2);}
+    |PackageDeclaration ImportDeclarations TypeDeclarations {$$ = NewNode("CompilationUnit"); $$->children.push_back($1); $$->children.push_back($2); $$->children.push_back($3);} ;
+
+
+
+ImportDeclarations:
+
+	ImportDeclaration {$$ = $1;}
+
+	|ImportDeclarations ImportDeclaration {$$ = NewNode("ImportDeclarations"); $$->children.push_back($1);$$->children.push_back($2);};
+
+
+TypeDeclarations:
+
+	TypeDeclaration {$$ = $1;}
+
+	|TypeDeclarations TypeDeclaration {$$ = NewNode("TypeDeclarations"); $$->children.push_back($1);$$->children.push_back($2);};
+
+PackageDeclaration:
+
+	package Name Semicolon {$$ = NewNode("PackageDeclaration"); $$->children.push_back(NewNode($1));$$->children.push_back($2);$$->children.push_back(NewNode($3));};
+
+ImportDeclaration:
+
+	SingleTypeImportDeclaration {$$ = $1;}
+ 
+	|TypeImportOnDemandDeclaration {$$ = $1;};
+
+SingleTypeImportDeclaration:
+
+	import Name Semicolon {$$ = NewNode("SingleTypeImportDeclaration"); $$->children.push_back(NewNode($1));$$->children.push_back($2);$$->children.push_back(NewNode($3));};
+
+TypeImportOnDemandDeclaration:
+
+	import Name Dot multi Semicolon {$$ = NewNode("TypeImportOnDemandDeclaration"); $$->children.push_back(NewNode($1));$$->children.push_back($2);$$->children.push_back(NewNode($3));$$->children.push_back(NewNode($4));$$->children.push_back(NewNode($5));};
+
+TypeDeclaration:
+
+	ClassDeclaration {$$ = $1;}
+
+	|InterfaceDeclaration {$$ = $1;}
+
+	| Semicolon  {mymap[$1] = NewNode($1); $$= mymap[$1];};
+
+
+
+
+Modifiers:
+
+	Modifier  {$$ = $1; }
+
+	|Modifiers Modifier  {$$ = NewNode("Modifiers"); $$->children.push_back($1);$$->children.push_back($2);};
+
+Modifier:
+
+	Public { mymap[$1] = NewNode($1); $$= mymap[$1];}
+		// $$->children.push_back(NewNode($1));}
+	| Protected {mymap[$1] = NewNode($1); $$= mymap[$1];}
+	| Private {mymap[$1] = NewNode($1); $$= mymap[$1];}
+	| Static {mymap[$1] = NewNode($1); $$= mymap[$1];}
+	| Abstract {mymap[$1] = NewNode($1); $$= mymap[$1];}
+	| final {mymap[$1] = NewNode($1); $$= mymap[$1];}
+	| native {mymap[$1] = NewNode($1); $$= mymap[$1];}
+	| synchronized {mymap[$1] = NewNode($1); $$= mymap[$1];}
+	| transient {mymap[$1] = NewNode($1); $$= mymap[$1];}
+	| Volatile {mymap[$1] = NewNode($1); $$= mymap[$1];};
+
+
+
+ClassDeclaration:
+
+	Class IDENTIFIER ClassBody {$$= NewNode("ClassDeclaration"); $$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back($3); struct Symbol *temp = putSymbol( GlobalTable, $2, "class", "class", 1, "global");  map2[$2]=temp;}
+    |Modifiers Class IDENTIFIER ClassBody {$$= NewNode("ClassDeclaration"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));$$->children.push_back($4); struct Symbol *temp = putSymbol( GlobalTable, $3, "class", "class", 1, "global");  map2[$3]=temp;}
+    |Class IDENTIFIER Super ClassBody {$$= NewNode("ClassDeclaration"); $$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back($3);$$->children.push_back($4); struct Symbol *temp = putSymbol( GlobalTable, $2, "class", "class", 1, "global");  map2[$2]=temp;} 
+    |Class IDENTIFIER Interfaces ClassBody {$$= NewNode("ClassDeclaration"); $$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back($3);$$->children.push_back($4); struct Symbol *temp = putSymbol( GlobalTable, $2, "class", "class", 1, "global");  map2[$2]=temp;}
+	|Class IDENTIFIER Super Interfaces ClassBody {$$= NewNode("ClassDeclaration"); $$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back($3);$$->children.push_back($4);$$->children.push_back($5); struct Symbol *temp = putSymbol( GlobalTable, $2, "class", "class", 1, "global");  map2[$2]=temp;}
+    |Modifiers Class IDENTIFIER Super ClassBody {$$= NewNode("ClassDeclaration"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));$$->children.push_back($4);$$->children.push_back($5); struct Symbol *temp = putSymbol( GlobalTable, $3, "class", "class", 1, "global");  map2[$3]=temp;}
+    |Modifiers Class IDENTIFIER Interfaces ClassBody {$$= NewNode("ClassDeclaration"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));$$->children.push_back($4);$$->children.push_back($5); struct Symbol *temp = putSymbol( GlobalTable, $3, "class", "class", 1, "global");  map2[$3]=temp;}
+    |Modifiers Class IDENTIFIER Super Interfaces ClassBody {$$= NewNode("ClassDeclaration"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));$$->children.push_back($4);$$->children.push_back($5);$$->children.push_back($6); struct Symbol *temp = putSymbol( GlobalTable, $3, "class", "class", 1, "global");  map2[$3]=temp;};
+
+Super:
+
+	extends ClassType {$$ = NewNode("Super"); $$->children.push_back(NewNode($1));$$->children.push_back($2);};
+
+Interfaces:
+
+	implements InterfaceTypeList {$$ = NewNode("Interfaces"); $$->children.push_back(NewNode($1));$$->children.push_back($2);};
+
+InterfaceTypeList:
+
+	InterfaceType {$$ = $1;}
+
+	|InterfaceTypeList Comma InterfaceType {$$ = NewNode("InterfaceTypeList");$$->children.push_back($1); $$->children.push_back(NewNode($2));$$->children.push_back($3);};
+
+ClassBody:
+
+	Left_curly Right_curly  {$$ = NewNode("ClassBody"); $$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2)); }
+
+    | Left_curly ClassBodyDeclarations Right_curly {$$ = NewNode("ClassBody"); $$->children.push_back(NewNode($1));$$->children.push_back($2);$$->children.push_back(NewNode($3));};
+
+
+ClassBodyDeclarations:
+
+	ClassBodyDeclaration {$$ = $1;}
+
+	|ClassBodyDeclarations ClassBodyDeclaration {$$ = NewNode("ClassBodyDeclarations"); $$->children.push_back($1);$$->children.push_back($2);};
+
+ClassBodyDeclaration:
+
+	ClassMemberDeclaration {$$ = $1;}
+
+	|StaticInitializer {$$ = $1;}
+
+	|ConstructorDeclaration {$$ = $1;};
+
+ClassMemberDeclaration:
+
+	FieldDeclaration {$$ = $1;}
+
+	|MethodDeclaration {$$ = $1;};
+
+FieldDeclaration:
+
+	Type VariableDeclarators Semicolon {$$ = NewNode("FieldDeclaration"); $$->children.push_back($1);$$->children.push_back($2);$$->children.push_back(NewNode($3));}
+    |Modifiers Type VariableDeclarators Semicolon {$$ = NewNode("FieldDeclaration"); $$->children.push_back($1);$$->children.push_back($2);$$->children.push_back($3);$$->children.push_back(NewNode($4));};
+
+VariableDeclarators:
+
+	VariableDeclarator {$$ = $1;}
+
+	|VariableDeclarators Comma VariableDeclarator {$$ = NewNode("VariableDeclarators"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back($3);};
+
+VariableDeclarator:
+
+	VariableDeclaratorId {$$ = $1;}
+
+	|VariableDeclaratorId Eq VariableInitializer {$$ = NewNode("VariableDeclarator"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back($3);};
+
+VariableDeclaratorId:
+	
+
+	IDENTIFIER {mymap[$1] = NewNode($1); $$= mymap[$1];}
+
+	|VariableDeclaratorId Left_sq Right_sq {$$= NewNode("VariableDeclaratorId"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));};
+
+VariableInitializer:
+
+	Expression {$$ = $1;}
+
+	|ArrayInitializer {$$ = $1;};
+
+
+MethodDeclaration:
+
+	MethodHeader MethodBody {$$ = NewNode("MethodDeclaration"); $$->children.push_back($1);$$->children.push_back($2);};
+
+MethodHeader:
+    Type MethodDeclarator {$$ = NewNode("MethodHeader"); $$->children.push_back($1);$$->children.push_back($2);}
+    |Modifiers Type MethodDeclarator {$$ = NewNode("MethodHeader"); $$->children.push_back($1);$$->children.push_back($2);$$->children.push_back($3);}
+    |Type MethodDeclarator Throws {$$ = NewNode("MethodHeader"); $$->children.push_back($1);$$->children.push_back($2);$$->children.push_back($3);}
+    |Modifiers Type MethodDeclarator Throws {$$ = NewNode("MethodHeader"); $$->children.push_back($1);$$->children.push_back($2);$$->children.push_back($3);$$->children.push_back($4);}
+    |Void MethodDeclarator {$$ = NewNode("MethodHeader"); $$->children.push_back(NewNode($1));$$->children.push_back($2);}
+    |Modifiers Void MethodDeclarator {$$ = NewNode("MethodHeader"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back($3);}
+    |Void MethodDeclarator Throws {$$ = NewNode("MethodHeader"); $$->children.push_back(NewNode($1));$$->children.push_back($2);$$->children.push_back($3);}
+    |Modifiers Void MethodDeclarator Throws {$$ = NewNode("MethodHeader"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back($3);$$->children.push_back($4);};
+
+
+
+MethodDeclarator:
+
+	IDENTIFIER Lb Rb {$$= NewNode("MethodDeclarator"); $$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));}
+
+    |IDENTIFIER Lb FormalParameterList Rb {$$= NewNode("MethodDeclarator"); $$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back($3);$$->children.push_back(NewNode($4));}
+
+	|MethodDeclarator Left_sq Right_sq {$$= NewNode("MethodDeclarator"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));};
+
+
+
+FormalParameterList:
+
+	FormalParameter {$$ = $1;}
+
+	|FormalParameterList Comma FormalParameter {$$ = NewNode("FormalParameterList"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back($3);};
+
+FormalParameter:
+	Type VariableDeclaratorId {$$ = NewNode("FormalParameter"); $$->children.push_back($1);$$->children.push_back($2);};
+
+Throws:
+
+	throws ClassTypeList {$$ = NewNode("Throws"); $$->children.push_back(NewNode($1));$$->children.push_back($2);};
+
+ClassTypeList:
+
+	ClassType {$$ = $1;}
+
+	|ClassTypeList Comma ClassType {$$ = NewNode("ClassTypeList");$$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back($3);} ;
+
+MethodBody:
+
+	Block {$$ = $1;}
+
+	| Semicolon {mymap[$1] = NewNode($1); $$= mymap[$1];};
+
+
+StaticInitializer:
+
+	Static Block {$$ = NewNode("StaticInitializer"); $$->children.push_back(NewNode($1));$$->children.push_back($2);};
+
+
+ConstructorDeclaration:
+
+	ConstructorDeclarator ConstructorBody {$$ = NewNode("ConstructorDeclaration"); $$->children.push_back($1);$$->children.push_back($2);}
+    |Modifiers ConstructorDeclarator ConstructorBody{$$ = NewNode("ConstructorDeclaration"); $$->children.push_back($1);$$->children.push_back($2);$$->children.push_back($3);}
+    |ConstructorDeclarator Throws ConstructorBody {$$ = NewNode("ConstructorDeclaration"); $$->children.push_back($1);$$->children.push_back($2);$$->children.push_back($3);}
+    |Modifiers ConstructorDeclarator Throws ConstructorBody {$$ = NewNode("ConstructorDeclaration"); $$->children.push_back($1);$$->children.push_back($2);$$->children.push_back($3);$$->children.push_back($4);};
+
+ConstructorDeclarator:
+
+	SimpleName Lb Rb {$$ = NewNode("ConstructorDeclarator"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));}
+    |SimpleName Lb FormalParameterList Rb {$$ = NewNode("ConstructorDeclarator"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back($3);$$->children.push_back(NewNode($4));};
+
+ConstructorBody:
+
+	Left_curly Right_curly {$$ = NewNode("ConstructorBody"); $$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));}
+    |Left_curly ExplicitConstructorInvocation Right_curly {$$ = NewNode("ConstructorBody"); $$->children.push_back(NewNode($1));$$->children.push_back($2);$$->children.push_back(NewNode($3));}
+    |Left_curly BlockStatements Right_curly {$$ = NewNode("ConstructorBody"); $$->children.push_back(NewNode($1));$$->children.push_back($2);$$->children.push_back(NewNode($3));}
+    |Left_curly ExplicitConstructorInvocation BlockStatements Right_curly {$$ = NewNode("ConstructorBody"); $$->children.push_back(NewNode($1));$$->children.push_back($2);$$->children.push_back($3);$$->children.push_back(NewNode($4));};
+
+
+ExplicitConstructorInvocation:
+
+	This Lb  Rb Semicolon {$$ = NewNode("ExplicitConstructorInvocation"); $$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));$$->children.push_back(NewNode($4));}
+    |This Lb ArgumentList Rb Semicolon {$$ = NewNode("ExplicitConstructorInvocation"); $$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back($3);$$->children.push_back(NewNode($4));$$->children.push_back(NewNode($5));}
+    |super Lb Rb Semicolon {$$ = NewNode("ExplicitConstructorInvocation"); $$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));$$->children.push_back(NewNode($4));}
+	|super Lb ArgumentList Rb Semicolon {$$ = NewNode("ExplicitConstructorInvocation"); $$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back($3);$$->children.push_back(NewNode($4));$$->children.push_back(NewNode($5));};
+
+InterfaceDeclaration:
+
+	interface IDENTIFIER InterfaceBody {$$ = NewNode("InterfaceDeclaration"); $$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back($3); struct Symbol *temp = putSymbol( GlobalTable, $2, "interface", "interface", 1, "global"); map2[$2]=temp;}
+    |interface IDENTIFIER ExtendsInterfaces InterfaceBody {$$ = NewNode("InterfaceDeclaration"); $$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back($3);$$->children.push_back($3);  struct Symbol *temp = putSymbol( GlobalTable, $2, "interface", "interface", 1, "global");  map2[$2]=temp;}
+    |Modifiers interface IDENTIFIER InterfaceBody {$$ = NewNode("InterfaceDeclaration"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));$$->children.push_back($4);  struct Symbol *temp = putSymbol( GlobalTable, $3, "interface", "interface", 1, "global");  map2[$3]=temp;}
+    |Modifiers interface IDENTIFIER ExtendsInterfaces InterfaceBody {$$ = NewNode("InterfaceDeclaration"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));$$->children.push_back($4);$$->children.push_back($5);  struct Symbol *temp = putSymbol( GlobalTable, $3, "interface", "interface", 1, "global");  map2[$3]=temp;};
+
+
+
+ExtendsInterfaces:
+
+	extends InterfaceType {$$ = NewNode("ExtendsInterfaces"); $$->children.push_back(NewNode($1));$$->children.push_back($2);}
+
+	|ExtendsInterfaces Comma InterfaceType {$$ = NewNode("ExtendsInterfaces"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back($3);};
+
+InterfaceBody:
+
+	Left_curly Right_curly {$$ = NewNode("InterfaceBody"); $$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));}
+    |Left_curly InterfaceMemberDeclarations Right_curly {$$ = NewNode("InterfaceBody"); $$->children.push_back(NewNode($1));$$->children.push_back($2);$$->children.push_back(NewNode($3));};
+
+
+
+InterfaceMemberDeclarations:
+
+	InterfaceMemberDeclaration {$$ = $1;}
+
+	|InterfaceMemberDeclarations InterfaceMemberDeclaration {$$ = NewNode("InterfaceMemberDeclarations"); $$->children.push_back($1);$$->children.push_back($2);} ;
+
+InterfaceMemberDeclaration:
+
+	ConstantDeclaration {$$ = $1;}
+
+	|AbstractMethodDeclaration {$$ = $1;};
+
+ConstantDeclaration:
+
+	FieldDeclaration {$$ = $1;};
+
+AbstractMethodDeclaration:
+
+	MethodHeader Semicolon{$$ = NewNode("AbstractMethodDeclaration"); $$->children.push_back($1);$$->children.push_back(NewNode($2));};
+
+
+ArrayInitializer:
+
+	Left_curly  Right_curly {$$ = NewNode("ArrayInitializer"); $$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));}
+    |Left_curly VariableInitializers Right_curly {$$ = NewNode("ArrayInitializer"); $$->children.push_back(NewNode($1));$$->children.push_back($2);$$->children.push_back(NewNode($3));};
+    |Left_curly Comma Right_curly {$$ = NewNode("ArrayInitializer"); $$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));};
+    |Left_curly VariableInitializers Comma Right_curly {$$ = NewNode("ArrayInitializer"); $$->children.push_back(NewNode($1));$$->children.push_back($2);$$->children.push_back(NewNode($3));$$->children.push_back(NewNode($4));};;
+
+
+
+VariableInitializers:
+
+	VariableInitializer {$$ = $1;}
+
+	|VariableInitializers Comma VariableInitializer {$$ = NewNode("VariableInitializers"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back($3);};
+
+
+Block:
+
+	Left_curly Right_curly  {$$ = NewNode("Block"); $$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));}
+    |Left_curly BlockStatements Right_curly  {$$ = NewNode("Block");$$->children.push_back(NewNode($1));$$->children.push_back($2);$$->children.push_back(NewNode($3));};;
+
+BlockStatements:
+
+	BlockStatement {$$ = $1;}
+
+	|BlockStatements BlockStatement {$$ = NewNode("BlockStatements"); $$->children.push_back($1);$$->children.push_back($2);};
+
+BlockStatement:
+
+	LocalVariableDeclarationStatement {$$ = $1;}
+
+	|Statement {$$ = $1; };
+
+LocalVariableDeclarationStatement:
+
+	LocalVariableDeclaration Semicolon {$$ = NewNode("LocalVariableDeclarationStatement"); $$->children.push_back($1);$$->children.push_back(NewNode($2));};
+
+LocalVariableDeclaration:
+
+	Type VariableDeclarators {$$ = NewNode("LocalVariableDeclaration"); $$->children.push_back($1);$$->children.push_back($2);};
+
+Statement:
+
+	StatementWithoutTrailingSubstatement {$$ = $1;}
+
+	|LabeledStatement {$$ = $1;}
+
+	|IfThenStatement {$$ = $1;}
+
+	|IfThenElseStatement {$$ = $1;}
+
+	|WhileStatement {$$ = $1;}
+
+	|ForStatement {$$ = $1;};
+
+StatementNoShortIf:
+
+	StatementWithoutTrailingSubstatement {$$ = $1;}
+
+	|LabeledStatementNoShortIf {$$ = $1;}
+
+	|IfThenElseStatementNoShortIf {$$ = $1;}
+
+	|WhileStatementNoShortIf {$$ = $1;}
+
+	|ForStatementNoShortIf {$$ = $1;};
+
+StatementWithoutTrailingSubstatement:
+
+	Block {$$ = $1;}
+
+	|EmptyStatement {$$ = $1;}
+
+	|ExpressionStatement {$$ = $1;}
+
+	|DoStatement {$$ = $1;}
+
+	|BreakStatement {$$ = $1;}
+
+	|ContinueStatement {$$ = $1;}
+
+	|ReturnStatement {$$ = $1;}
+
+	|SynchronizedStatement {$$ = $1;}
+
+	|ThrowStatement {$$ = $1;}
+ 
+	|TryStatement {$$ = $1;};
+
+
+EmptyStatement :
+	Semicolon {mymap[$1] = NewNode($1); $$= mymap[$1];};
+
+LabeledStatement :
+	IDENTIFIER Colon Statement {$$ = NewNode("LabeledStatement"); $$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back($3);};
+
+LabeledStatementNoShortIf :
+	IDENTIFIER Colon StatementNoShortIf {$$ = NewNode("LabeledStatementNoShortIf"); $$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back($3);};
+
+
+ExpressionStatement:
+
+	StatementExpression Semicolon {$$ = NewNode("ExpressionStatement"); $$->children.push_back($1);$$->children.push_back(NewNode($2));};
+
+StatementExpression:
+
+	Assignment {$$ = $1;}
+
+	|PreIncrementExpression {$$ = $1;}
+
+	|PreDecrementExpression {$$ = $1;}
+
+	|PostIncrementExpression {$$ = $1;}
+
+	|PostDecrementExpression {$$ = $1;}
+
+	|MethodInvocation {$$ = $1;}
+
+	|ClassInstanceCreationExpression {$$ = $1;};
+
+
+IfThenStatement:
+
+	If Lb Expression Rb Statement {$$ = NewNode("IfThenStatement");$$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back($3);$$->children.push_back(NewNode($4));$$->children.push_back($5); };
+
+IfThenElseStatement:
+
+	If Lb Expression Rb StatementNoShortIf Else Statement {$$ = NewNode("IfThenElseStatement");$$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back($3);$$->children.push_back(NewNode($4));$$->children.push_back($5);$$->children.push_back(NewNode($6)); $$->children.push_back($7);};
+
+IfThenElseStatementNoShortIf :
+
+	If Lb Expression Rb StatementNoShortIf Else StatementNoShortIf  {$$ = NewNode("IfThenElseStatementNoShortIf");$$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back($3);$$->children.push_back(NewNode($4));$$->children.push_back($5);$$->children.push_back(NewNode($6)); $$->children.push_back($7);};
+
+/* 
+Terminal : $$->children.push_back(NewNode($));
+NonTerminal : $$->children.push_back($);
+$$ = NewNode("") */
+
+
+WhileStatement:
+
+	While Lb Expression Rb Statement {$$ = NewNode("WhileStatement");$$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back($3);$$->children.push_back(NewNode($4));$$->children.push_back($5); };
+
+WhileStatementNoShortIf:
+
+	While Lb Expression Rb StatementNoShortIf {$$ = NewNode("WhileStatementNoShortIf");$$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back($3);$$->children.push_back(NewNode($4));$$->children.push_back($5); };
+
+DoStatement:
+
+	Do Statement While Lb Expression Rb Semicolon {$$ = NewNode("DoStatement");$$->children.push_back(NewNode($1));$$->children.push_back($2);$$->children.push_back(NewNode($3));$$->children.push_back(NewNode($4));$$->children.push_back($5); $$->children.push_back(NewNode($6));$$->children.push_back(NewNode($7));};
+
+ForStatement:
+
+	For Lb Semicolon Semicolon Rb Statement {$$ = NewNode("ForStatement");$$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));$$->children.push_back(NewNode($4));$$->children.push_back(NewNode($5));$$->children.push_back($6);}
+
+    |For Lb ForInit Semicolon Semicolon Rb Statement {$$ = NewNode("ForStatement");$$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back($3);$$->children.push_back(NewNode($4));$$->children.push_back(NewNode($5));$$->children.push_back(NewNode($6));$$->children.push_back($7);}
+
+    |For Lb Semicolon Expression Semicolon Rb Statement {$$ = NewNode("ForStatement");$$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));$$->children.push_back($4);$$->children.push_back(NewNode($5));$$->children.push_back(NewNode($6));$$->children.push_back($7);}
+
+    |For Lb  Semicolon  Semicolon ForUpdate Rb Statement {$$ = NewNode("ForStatement");$$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));$$->children.push_back(NewNode($4));$$->children.push_back($5);$$->children.push_back(NewNode($6));$$->children.push_back($7);}
+
+    |For Lb ForInit Semicolon Expression Semicolon Rb Statement {$$ = NewNode("ForStatement");$$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back($3);$$->children.push_back(NewNode($4));$$->children.push_back($5);$$->children.push_back(NewNode($6));$$->children.push_back(NewNode($7));$$->children.push_back($8);}
+	
+    |For Lb ForInit Semicolon Semicolon ForUpdate Rb Statement {$$ = NewNode("ForStatement");$$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back($3);$$->children.push_back(NewNode($4));$$->children.push_back(NewNode($5));$$->children.push_back($6);$$->children.push_back(NewNode($7));$$->children.push_back($8);}
+
+    |For Lb Semicolon Expression Semicolon ForUpdate Rb Statement {$$ = NewNode("ForStatement");$$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));$$->children.push_back($4);$$->children.push_back(NewNode($5));$$->children.push_back($6);$$->children.push_back(NewNode($7));$$->children.push_back($8);}
+
+    |For Lb ForInit Semicolon Expression Semicolon ForUpdate Rb Statement {$$ = NewNode("ForStatement");$$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back($3);$$->children.push_back(NewNode($4));$$->children.push_back($5);$$->children.push_back(NewNode($6));$$->children.push_back($7);$$->children.push_back(NewNode($8));$$->children.push_back($9);}
+	
+	|For Lb LocalVariableDeclaration Colon Expression Rb Statement {$$ = NewNode("ForStatement");$$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back($3);$$->children.push_back(NewNode($4));$$->children.push_back($5);$$->children.push_back(NewNode($6));$$->children.push_back($7);};
+
+ForStatementNoShortIf:
+
+	For Lb Semicolon Semicolon Rb StatementNoShortIf {$$ = NewNode("ForStatementNoShortIf");$$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));$$->children.push_back(NewNode($4));$$->children.push_back(NewNode($5));$$->children.push_back($6);}
+
+    |For Lb ForInit Semicolon Semicolon Rb StatementNoShortIf {$$ = NewNode("ForStatementNoShortIf");$$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back($3);$$->children.push_back(NewNode($4));$$->children.push_back(NewNode($5));$$->children.push_back(NewNode($6));$$->children.push_back($7);}
+
+    |For Lb Semicolon Expression Semicolon Rb StatementNoShortIf {$$ = NewNode("ForStatementNoShortIf");$$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));$$->children.push_back($4);$$->children.push_back(NewNode($5));$$->children.push_back(NewNode($6));$$->children.push_back($7);}
+
+    |For Lb  Semicolon  Semicolon ForUpdate Rb StatementNoShortIf {$$ = NewNode("ForStatementNoShortIf");$$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));$$->children.push_back(NewNode($4));$$->children.push_back($5);$$->children.push_back(NewNode($6));$$->children.push_back($7);}
+
+    |For Lb ForInit Semicolon Expression Semicolon Rb StatementNoShortIf {$$ = NewNode("ForStatementNoShortIf");$$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back($3);$$->children.push_back(NewNode($4));$$->children.push_back($5);$$->children.push_back(NewNode($6));$$->children.push_back(NewNode($7));$$->children.push_back($8);}
+	
+    |For Lb ForInit Semicolon Semicolon ForUpdate Rb StatementNoShortIf {$$ = NewNode("ForStatementNoShortIf");$$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back($3);$$->children.push_back(NewNode($4));$$->children.push_back(NewNode($5));$$->children.push_back($6);$$->children.push_back(NewNode($7));$$->children.push_back($8);}
+
+    |For Lb Semicolon Expression Semicolon ForUpdate Rb StatementNoShortIf {$$ = NewNode("ForStatementNoShortIf");$$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));$$->children.push_back($4);$$->children.push_back(NewNode($5));$$->children.push_back($6);$$->children.push_back(NewNode($7));$$->children.push_back($8);}
+
+    |For Lb ForInit Semicolon Expression Semicolon ForUpdate Rb StatementNoShortIf {$$ = NewNode("ForStatementNoShortIf");$$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back($3);$$->children.push_back(NewNode($4));$$->children.push_back($5);$$->children.push_back(NewNode($6));$$->children.push_back($7);$$->children.push_back(NewNode($8));$$->children.push_back($9);}
+	
+	|For Lb LocalVariableDeclaration Colon Expression Rb StatementNoShortIf {$$ = NewNode("ForStatementNoShortIf");$$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back($3);$$->children.push_back(NewNode($4));$$->children.push_back($5);$$->children.push_back(NewNode($6));$$->children.push_back($7);};
+
+
+ForInit:
+
+	StatementExpressionList {$$ = $1;}
+
+	|LocalVariableDeclaration {$$ = $1;};
+
+ForUpdate:
+
+	StatementExpressionList {$$ = $1;};
+
+StatementExpressionList:
+
+	StatementExpression {$$ = $1;}
+
+	|StatementExpressionList Comma StatementExpression {$$ = NewNode("StatementExpressionList"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back($3);};
+
+
+BreakStatement:
+
+	Break Semicolon {$$ = NewNode("BreakStatement"); $$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));}
+    |Break IDENTIFIER Semicolon {$$ = NewNode("BreakStatement"); $$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));};
+
+
+ContinueStatement:
+
+	Continue Semicolon {$$ = NewNode("ContinueStatement"); $$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));}
+    |Continue IDENTIFIER Semicolon {$$ = NewNode("ContinueStatement"); $$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));};
+
+ReturnStatement:
+
+	Return Semicolon {$$ = NewNode("ReturnStatement"); $$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));}
+    |Return Expression Semicolon {$$ = NewNode("ReturnStatement"); $$->children.push_back(NewNode($1));$$->children.push_back($2);$$->children.push_back(NewNode($3));};
+
+ThrowStatement:
+
+	Throw Expression Semicolon {$$ = NewNode("ThrowStatement"); $$->children.push_back(NewNode($1));$$->children.push_back($2);$$->children.push_back(NewNode($3));};
+
+SynchronizedStatement:
+
+	synchronized Lb Expression Rb Block {$$ = NewNode("SynchronizedStatement"); $$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back($3);$$->children.push_back(NewNode($4));$$->children.push_back($5);};
+
+TryStatement:
+
+	Try Block Catches {$$ = NewNode("TryStatement");$$->children.push_back(NewNode($1)); $$->children.push_back($2);$$->children.push_back($3);}
+
+	|Try Block Finally {$$ = NewNode("TryStatement");$$->children.push_back(NewNode($1)); $$->children.push_back($2);$$->children.push_back($3);}
+
+    |Try Block Catches Finally {$$ = NewNode("TryStatement");$$->children.push_back(NewNode($1)); $$->children.push_back($2);$$->children.push_back($3);$$->children.push_back($4);}
+
+
+Catches:
+
+	CatchClause {$$ = $1;}
+	|Catches CatchClause {$$ = NewNode("Catches"); $$->children.push_back($1);$$->children.push_back($2);};
+
+CatchClause:
+
+	Catch Lb FormalParameter Rb Block {$$ = NewNode("CatchClause"); $$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));$$->children.push_back($3);$$->children.push_back(NewNode($4));$$->children.push_back($5);};
+
+Finally:
+
+	finally Block {$$ = NewNode("Finally");$$->children.push_back(NewNode($1)); $$->children.push_back($2);};
+
+
+Primary:
+
+	PrimaryNoNewArray {$$ = $1;}
+
+	|ArrayCreationExpression {$$ = $1;};
+
+PrimaryNoNewArray:
+
+	Literal {$$ = $1;}
+
+	|This {$$= NewNode("PrimaryNoNewArray"); $$->children.push_back(NewNode($1));}
+
+	|Lb Expression Rb {$$= NewNode("PrimaryNoNewArray"); $$->children.push_back(NewNode($1)); $$->children.push_back($2);$$->children.push_back(NewNode($3));}
+
+	|ClassInstanceCreationExpression {$$ = $1;}
+
+	|FieldAccess {$$ = $1;}
+
+	|MethodInvocation {$$ = $1;}
+
+	|ArrayAccess {$$ = $1;};
+ 
+ClassInstanceCreationExpression:
+
+	New ClassType Lb Rb {$$= NewNode("ClassInstanceCreationExpression"); $$->children.push_back(NewNode($1)); $$->children.push_back($2);$$->children.push_back(NewNode($3));$$->children.push_back(NewNode($4));}
+
+    |New ClassType Lb ArgumentList Rb {$$= NewNode("ClassInstanceCreationExpression"); $$->children.push_back(NewNode($1)); $$->children.push_back($2);$$->children.push_back(NewNode($3)); $$->children.push_back($4);$$->children.push_back(NewNode($5));};
+
+ArgumentList:
+
+	Expression {$$ = $1;}
+
+	|ArgumentList Comma Expression  {$$ = NewNode("ArgumentList"); $$->children.push_back($1);$$->children.push_back(NewNode($2)); $$->children.push_back($3);};
+
+ArrayCreationExpression:
+
+	New PrimitiveType DimExprs  {$$ = NewNode("ArrayCreationExpression"); $$->children.push_back(NewNode($1)); $$->children.push_back($2);$$->children.push_back($3);}
+
+    |New PrimitiveType DimExprs Dims {$$ = NewNode("ArrayCreationExpression"); $$->children.push_back(NewNode($1)); $$->children.push_back($2);$$->children.push_back($3);$$->children.push_back($4);}
+
+	|New ClassOrInterfaceType DimExprs {$$ = NewNode("ArrayCreationExpression"); $$->children.push_back(NewNode($1)); $$->children.push_back($2);$$->children.push_back($3);}
+
+    |New ClassOrInterfaceType DimExprs Dims {$$ = NewNode("ArrayCreationExpression"); $$->children.push_back(NewNode($1)); $$->children.push_back($2);$$->children.push_back($3);$$->children.push_back($4);};
+
+
+
+DimExprs:
+
+	DimExpr {$$ = $1;}
+
+	|DimExprs DimExpr {$$ = NewNode("DimExprs"); $$->children.push_back($1);$$->children.push_back($2);};
+
+DimExpr:
+
+	Left_sq Expression Right_sq {$$ = NewNode("DimExpr"); $$->children.push_back(NewNode($1));$$->children.push_back($2); $$->children.push_back(NewNode($3));};
+
+Dims:
+
+	Left_sq Right_sq {$$ = NewNode("Dims"); $$->children.push_back(NewNode($1));$$->children.push_back(NewNode($2));}
+
+	|Dims Left_sq Right_sq {$$ = NewNode("Dims");$$->children.push_back($1); $$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));};
+
+FieldAccess:
+
+	Primary Dot IDENTIFIER {$$ = NewNode("FieldAccess");$$->children.push_back($1); $$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));}
+
+	|super Dot IDENTIFIER {$$ = NewNode("FieldAccess");$$->children.push_back(NewNode($1)); $$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));};
+
+MethodInvocation:
+
+
+	Name Lb  Rb {$$ = NewNode("MethodInvocation");$$->children.push_back($1); $$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));}
+
+    |Name Lb ArgumentList Rb {$$ = NewNode("MethodInvocation");$$->children.push_back($1); $$->children.push_back(NewNode($2));$$->children.push_back($3);$$->children.push_back(NewNode($4)); }
+
+	|Primary Dot IDENTIFIER Lb  Rb {$$ = NewNode("MethodInvocation");$$->children.push_back($1); $$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));$$->children.push_back(NewNode($4));$$->children.push_back(NewNode($5));}
+
+    |Primary Dot IDENTIFIER Lb ArgumentList Rb {$$ = NewNode("MethodInvocation");$$->children.push_back($1); $$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));$$->children.push_back(NewNode($4));$$->children.push_back($5);$$->children.push_back(NewNode($6));}
+
+	|super Dot IDENTIFIER Lb  Rb {$$ = NewNode("MethodInvocation");$$->children.push_back(NewNode($1)); $$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));$$->children.push_back(NewNode($4));$$->children.push_back(NewNode($5));}
+
+    |super Dot IDENTIFIER Lb ArgumentList Rb {$$ = NewNode("MethodInvocation");$$->children.push_back(NewNode($1)); $$->children.push_back(NewNode($2));$$->children.push_back(NewNode($3));$$->children.push_back(NewNode($4));$$->children.push_back($5);$$->children.push_back(NewNode($6));};
+
+ArrayAccess:
+
+	Name Left_sq Expression Right_sq {$$ = NewNode("ArrayAccess");$$->children.push_back($1); $$->children.push_back(NewNode($2));$$->children.push_back($3);$$->children.push_back(NewNode($4));}
+
+	|PrimaryNoNewArray Left_sq Expression Right_sq {$$ = NewNode("ArrayAccess");$$->children.push_back($1); $$->children.push_back(NewNode($2));$$->children.push_back($3);$$->children.push_back(NewNode($4));};
+PostfixExpression:
+
+	Primary {$$ = $1;}
+
+	|Name {$$ = $1;}
+
+	|PostIncrementExpression {$$ = $1;}
+
+	|PostDecrementExpression {$$ = $1;};
+
+PostIncrementExpression:
+
+	PostfixExpression plusplus {$$ = NewNode("PostIncrementExpression"); $$->children.push_back($1);$$->children.push_back(NewNode($2));};
+
+PostDecrementExpression:
+
+	PostfixExpression minusminus {$$ = NewNode("PostDecrementExpression"); $$->children.push_back($1);$$->children.push_back(NewNode($2));};
+
+UnaryExpression:
+
+	PreIncrementExpression {$$ = $1;}
+
+	|PreDecrementExpression {$$ = $1;}
+
+	|addn UnaryExpression {$$ = NewNode("UnaryExpression");$$->children.push_back(NewNode($1)); $$->children.push_back($2);}
+
+	|subn UnaryExpression {$$ = NewNode("UnaryExpression");$$->children.push_back(NewNode($1)); $$->children.push_back($2);}
+
+	|UnaryExpressionNotPlusMinus {$$ = $1;};
+
+PreIncrementExpression:
+
+	plusplus UnaryExpression {$$ = NewNode("PreIncrementExpression");$$->children.push_back(NewNode($1)); $$->children.push_back($2);};
+
+PreDecrementExpression:
+
+	minusminus UnaryExpression {$$ = NewNode("PreDecrementExpression");$$->children.push_back(NewNode($1)); $$->children.push_back($2);};
+
+UnaryExpressionNotPlusMinus:
+
+	PostfixExpression {$$ = $1;}
+
+	|tilde UnaryExpression {$$ = NewNode("UnaryExpressionNotPlusMinus");$$->children.push_back(NewNode($1)); $$->children.push_back($2);}
+
+	|Not UnaryExpression {$$ = NewNode("UnaryExpressionNotPlusMinus");$$->children.push_back(NewNode($1)); $$->children.push_back($2);}
+
+	|CastExpression {$$ = $1;};
+
+CastExpression:
+
+	Lb PrimitiveType Rb UnaryExpression {$$ = NewNode("CastExpression"); $$->children.push_back(NewNode($1));$$->children.push_back($2);$$->children.push_back(NewNode($3));$$->children.push_back($4);}
+
+    |Lb PrimitiveType Dims Rb UnaryExpression {$$ = NewNode("CastExpression"); $$->children.push_back(NewNode($1));$$->children.push_back($2);$$->children.push_back($3);$$->children.push_back(NewNode($4));$$->children.push_back($5);}
+
+	|Lb Expression Rb UnaryExpressionNotPlusMinus {$$ = NewNode("CastExpression"); $$->children.push_back(NewNode($1));$$->children.push_back($2);$$->children.push_back(NewNode($3));$$->children.push_back($4);}
+
+	|Lb Name Dims Rb UnaryExpressionNotPlusMinus {$$ = NewNode("CastExpression"); $$->children.push_back(NewNode($1));$$->children.push_back($2);$$->children.push_back($3);$$->children.push_back(NewNode($4));$$->children.push_back($5);};
+
+MultiplicativeExpression:
+
+	UnaryExpression {$$ = $1;}
+
+	|MultiplicativeExpression multi UnaryExpression {$$ = NewNode("MultiplicativeExpression"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back($3);}
+
+	|MultiplicativeExpression Div UnaryExpression {$$ = NewNode("MultiplicativeExpression"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back($3);}
+
+	|MultiplicativeExpression mod UnaryExpression {$$ = NewNode("MultiplicativeExpression"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back($3);};
+
+AdditiveExpression:
+
+	MultiplicativeExpression {$$ = $1;}
+
+	|AdditiveExpression addn MultiplicativeExpression {$$ = NewNode("AdditiveExpression"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back($3);}
+
+	|AdditiveExpression subn MultiplicativeExpression {$$ = NewNode("AdditiveExpression"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back($3);};
+
+ShiftExpression:
+
+	AdditiveExpression {$$ = $1;}
+
+	|ShiftExpression ls AdditiveExpression {$$ = NewNode("ShiftExpression"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back($3);}
+
+	|ShiftExpression rs AdditiveExpression {$$ = NewNode("ShiftExpression"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back($3);}
+
+	|ShiftExpression tripleshft AdditiveExpression {$$ = NewNode("ShiftExpression"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back($3);};
+
+RelationalExpression:
+
+	ShiftExpression {$$ = $1;}
+
+	|RelationalExpression Lessthan ShiftExpression {$$ = NewNode("RelationalExpression"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back($3);}
+
+	|RelationalExpression Greaterthan ShiftExpression {$$ = NewNode("RelationalExpression"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back($3);}
+
+	|RelationalExpression leq ShiftExpression {$$ = NewNode("RelationalExpression"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back($3);}
+
+	|RelationalExpression geq ShiftExpression {$$ = NewNode("RelationalExpression"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back($3);}
+
+	|RelationalExpression instanceof ReferenceType {$$ = NewNode("RelationalExpression"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back($3);};
+
+EqualityExpression:
+
+	RelationalExpression {$$ = $1;}
+
+	|EqualityExpression deq RelationalExpression {$$ = NewNode("EqualityExpression"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back($3);}
+
+	|EqualityExpression neq RelationalExpression {$$ = NewNode("EqualityExpression"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back($3);};
+
+AndExpression:
+
+	EqualityExpression {$$ = $1;}
+
+	|AndExpression Bit_and EqualityExpression {$$ = NewNode("AndExpression"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back($3);}
+
+ExclusiveOrExpression:
+
+	AndExpression {$$ = $1;}
+
+	|ExclusiveOrExpression Power AndExpression {$$ = NewNode("ExclusiveOrExpression"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back($3);};
+
+InclusiveOrExpression:
+
+	ExclusiveOrExpression {$$ = $1;}
+
+	|InclusiveOrExpression Or ExclusiveOrExpression {$$ = NewNode("InclusiveOrExpression"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back($3);}
+;
+
+ConditionalAndExpression:
+
+	InclusiveOrExpression {$$ = $1;}
+
+	|ConditionalAndExpression andand InclusiveOrExpression {$$ = NewNode("ConditionalAndExpression"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back($3);};
+
+ConditionalOrExpression:
+
+	ConditionalAndExpression {$$ = $1;}
+
+	|ConditionalOrExpression Ortwice ConditionalAndExpression {$$ = NewNode("ConditionalOrExpression"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back($3);};
+
+ConditionalExpression:
+
+	ConditionalOrExpression {$$ = $1;}
+
+	|ConditionalOrExpression Qmark Expression Colon ConditionalExpression {$$ = NewNode("ConditionalExpression"); $$->children.push_back($1);$$->children.push_back(NewNode($2));$$->children.push_back($3);$$->children.push_back(NewNode($4));$$->children.push_back($5);};
+
+AssignmentExpression:
+
+	ConditionalExpression {$$ = $1;}
+
+	|Assignment {$$ = $1;};
+
+Assignment:
+
+	LeftHandSide AssignmentOperator AssignmentExpression {$$ = NewNode("Assignment"); $$->children.push_back($1);$$->children.push_back($2);$$->children.push_back($3);};
+
+LeftHandSide:
+
+	Name {$$ = $1;}
+
+	|FieldAccess {$$ = $1;}
+
+	|ArrayAccess {$$ = $1;};
+
+AssignmentOperator:
+
+	Eq {mymap[$1] = NewNode($1); $$= mymap[$1];}
+	| Stareq {mymap[$1] = NewNode($1); $$= mymap[$1];}
+	| slasheq {mymap[$1] = NewNode($1); $$= mymap[$1];}
+	| modeq {mymap[$1] = NewNode($1); $$= mymap[$1];}
+	|  pluseq {mymap[$1] = NewNode($1); $$= mymap[$1];}
+	|  minuseq {mymap[$1] = NewNode($1); $$= mymap[$1];}
+	| lseq {mymap[$1] = NewNode($1); $$= mymap[$1];}
+	| rseq {mymap[$1] = NewNode($1); $$= mymap[$1];}
+	| triplegeq {mymap[$1] = NewNode($1); $$= mymap[$1];}
+	| andeq {mymap[$1] = NewNode($1); $$= mymap[$1];}
+	| poweq {mymap[$1] = NewNode($1); $$= mymap[$1];}
+	| oreq {mymap[$1] = NewNode($1); $$= mymap[$1];};
+
+Expression:
+
+	AssignmentExpression {$$ = $1;};
+
+
+%%
+
+struct Node* NewNode(string token){
+    struct Node *temp = new Node();
+    temp->token = token;
+    return temp;
+}
+
+struct Node* NewNodeS(string token){
+	string token1 = token.substr(1,token.size()-2);
+    struct Node *temp = new Node();
+    temp->token = token1;
+    return temp;
+}
+
+struct Symbol* NewSymbol(char *lexeme, char* type, string attribute, int block, string scope){
+	struct Symbol *temp = new Symbol();
+	temp->lexeme=lexeme;
+	temp->type=type;
+	temp->attribute=attribute;
+	temp->block = block;
+	temp->scope = scope;
+	return temp;
+}
+
+
+string convert(struct Node*n, int k){
+	string s = " ";
+	vector<struct Node*> child;
+	for(int i = 0; i < n->children.size(); i++)  {
+      int ccount = cnt++;
+      s += "\"" + to_string(k) + "\" [label=\"" + n->token + "\"];\n";
+      s += "\"" + to_string(ccount) + "\" [label=\"" + n->children[i]->token + "\"];\n";
+      s +="\""+ to_string(k) + "\" -> \"" + to_string(ccount) + "\";\n";                                                                                                  + "\";\n";
+      s +=convert(n->children[i], ccount);
+  }
+  return s;
+}
+
+
+int main(int argc, char**argv)
+{
+yyin=fopen(argv[1],"r");
+  myFile.open(argv[2]);
+  myFile << "digraph {" << endl;
+  yyparse();
+  /* LevelOrderTraversal(head); */
+  if(!head){
+	cout<<"hello"<<endl;
+  }
+   myFile << convert(head,0) << endl; 
+  myFile << "}" << endl; 
+    fstream fout;
+  fout.open("output1.csv", ios::out);
+  fout<<"Lexeme \t Data Type \t Attribute \t Block Level \t Scope"<<endl;
+  for(auto i= map2.begin(); i!=map2.end(); i++){
+      fout<<i->second->lexeme<<"\t"<<i->second->type<<"\t"<< i->second->attribute<<"\t"<<i->second->block<<"\t"<<i->second->scope<<endl;
+  }
+  fout.close();
+  /* struct Symbol *temp=getSymbol(GlobalTable, "B");
+   */
+  myFile.close();
+  return 0;
+
+}
+
+void yyerror(char const * message)
+{
+    cout<<endl<<message<<" in line : "<<yylineno <<endl;
+}
